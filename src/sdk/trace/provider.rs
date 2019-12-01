@@ -8,7 +8,7 @@
 //! propagators) are provided by the `Provider`. `Tracer` instances do
 //! not duplicate this data to avoid that different `Tracer` instances
 //! of the `Provider` have different versions of these data.
-use crate::exporter::trace::{jaeger, SpanExporter};
+use crate::exporter::trace::{jaeger, print, SpanExporter};
 use crate::{api, sdk};
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -38,41 +38,52 @@ impl Provider {
 
     /// Initialize a new `Tracer` by name.
     fn initialize_tracer(&self, component_name: &'static str) -> sdk::Tracer {
-        // TODO allow non-jaeger exporter and multiple exporters
-        let span_sender = self
+        let exporter = self
             .exporters
             .first()
             .expect("Exporters cannot be empty")
             .as_any()
-            .downcast_ref::<jaeger::Exporter>()
-            .expect("Only jaeger exporters allowed")
-            .span_sender
-            .clone();
+        if let Some(exporter) = exporter.downcast_ref::<jaeger::Exporter>() {
+          // TODO allow non-jaeger exporter and multiple exporters
+          let span_sender = self
+              .exporters
+              .first()
+              .expect("Exporters cannot be empty")
+              .as_any()
+              .downcast_ref::<jaeger::Exporter>()
+              .expect("Only jaeger exporters allowed")
+              .span_sender
+              .clone();
 
-        let tracer = match self.config.default_sampler {
-            api::Sampler::Always => jaeger::Tracer::with_sender(jaeger::AllSampler, span_sender),
-            api::Sampler::Never => jaeger::Tracer::with_sender(jaeger::NullSampler, span_sender),
-            api::Sampler::Parent => {
-                jaeger::Tracer::with_sender(jaeger::PassiveSampler, span_sender)
-            }
-            api::Sampler::Probability(prob) => {
-                // rustracing_jaeger does not like >1 or < 0
+          let tracer = match self.config.default_sampler {
+              api::Sampler::Always => jaeger::Tracer::with_sender(jaeger::AllSampler, span_sender),
+              api::Sampler::Never => jaeger::Tracer::with_sender(jaeger::NullSampler, span_sender),
+              api::Sampler::Parent => {
+                  jaeger::Tracer::with_sender(jaeger::PassiveSampler, span_sender)
+              }
+              api::Sampler::Probability(prob) => {
+                  // rustracing_jaeger does not like >1 or < 0
 
-                let prob = if prob > 1.0 {
-                    1.0
-                } else if prob < 0.0 {
-                    0.0
-                } else {
-                    prob
-                };
-                jaeger::Tracer::with_sender(
-                    jaeger::ProbabilisticSampler::new(prob).unwrap(),
-                    span_sender,
-                )
-            }
-        };
+                  let prob = if prob > 1.0 {
+                      1.0
+                  } else if prob < 0.0 {
+                      0.0
+                  } else {
+                      prob
+                  };
+                  jaeger::Tracer::with_sender(
+                      jaeger::ProbabilisticSampler::new(prob).unwrap(),
+                      span_sender,
+                  )
+              }
+          };
 
-        sdk::Tracer::new(component_name, tracer)
+          return sdk::Tracer::new(component_name, tracer)
+        } else if let Some(exporter) = exporter.downcast_ref::<print::Exporter>() {
+          return sdk::Tracer::new(component_name, tracer)
+        } else {
+            fail("Only jaeger or print exporters allowed");
+        }
     }
 }
 

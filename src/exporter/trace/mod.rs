@@ -2,6 +2,7 @@
 use crate::api;
 
 pub mod jaeger;
+pub mod print;
 
 /// `SpanExporter` defines the interface that protocol-specific exporters must
 /// implement so that they can be plugged into OpenTelemetry SDK and support
